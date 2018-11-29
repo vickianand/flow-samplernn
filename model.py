@@ -1,4 +1,5 @@
 import nn
+from nn import lecun_uniform, LearnedUpsampling1d, concat_init
 import utils
 
 import torch
@@ -69,19 +70,19 @@ class FrameLevelRNN(torch.nn.Module):
             batch_first=True
         )
         for i in range(n_rnn):
-            nn.concat_init(
+            concat_init(
                 getattr(self.rnn, 'weight_ih_l{}'.format(i)),
-                [nn.lecun_uniform, nn.lecun_uniform, nn.lecun_uniform]
+                [lecun_uniform, lecun_uniform, lecun_uniform]
             )
             init.constant(getattr(self.rnn, 'bias_ih_l{}'.format(i)), 0)
 
-            nn.concat_init(
+            concat_init(
                 getattr(self.rnn, 'weight_hh_l{}'.format(i)),
-                [nn.lecun_uniform, nn.lecun_uniform, init.orthogonal]
+                [lecun_uniform, lecun_uniform, init.orthogonal]
             )
             init.constant(getattr(self.rnn, 'bias_hh_l{}'.format(i)), 0)
 
-        self.upsampling = nn.LearnedUpsampling1d(
+        self.upsampling = LearnedUpsampling1d(
             in_channels=dim,
             out_channels=dim,
             kernel_size=frame_size
@@ -152,7 +153,7 @@ class SampleLevelMLP(torch.nn.Module):
             out_channels=2, # mu, log_sigma
             kernel_size=1
         )
-        nn.lecun_uniform(self.output.weight)
+        lecun_uniform(self.output.weight)
         init.constant(self.output.bias, 0)
         if weight_norm:
             self.output = torch.nn.utils.weight_norm(self.output)
@@ -234,8 +235,7 @@ class Generator(Runner):
         self.reset_hidden_states()
 
         bottom_frame_size = self.model.frame_level_rnns[0].n_frame_samples
-        sequences = torch.LongTensor(n_seqs, self.model.lookback + seq_len) \
-                         .fill_(utils.q_zero(self.model.q_levels))
+        sequences = torch.zeros(n_seqs, self.model.lookback + seq_len)
         frame_level_outputs = [None for _ in self.model.frame_level_rnns]
 
         for i in range(self.model.lookback, self.model.lookback + seq_len):
@@ -245,7 +245,7 @@ class Generator(Runner):
                     continue
 
                 prev_samples = torch.autograd.Variable(
-                    sequences[:, i - rnn.n_frame_samples : i].unsqueeze(1), # [**] not sure of unsqueeze
+                    sequences[:, i - rnn.n_frame_samples : i].unsqueeze(1),
                     volatile=True
                 )
                 if self.cuda:
@@ -275,8 +275,13 @@ class Generator(Runner):
                                       .unsqueeze(1)
             sample_dist = self.model.sample_level_mlp(
                 prev_samples, upper_tier_conditioning
-            ).squeeze(1).exp_().data
-            sequences[:, i] = sample_dist.multinomial(1).squeeze(1)
+            ).data
+            # sample = mu + z * sigma; where z is sampled from std-normal
+            z = torch.randn(n_seqs, 1).view(-1)
+            if self.cuda:
+                z = z.cuda()
+            sequences[:, i] = sample_dist[:, 0, 0] \
+                        + sample_dist[:, 0, 1] * z
 
         torch.backends.cudnn.enabled = True
 

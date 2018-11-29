@@ -72,11 +72,10 @@ def sequence_nll_loss_bits(input, target, *args, **kwargs):
 
 def gaussian_loss(x, mu, log_sigma):
     ''' nll for gaussian distribution
-        log_sigma is actually assumed to be log(sigma^2)
     '''
     pi = x.new_full(size = x.shape, fill_value = math.pi)
     c = log_sigma + 0.5 * torch.log(2 * pi)
-    return c + (x - mu) * (x - mu) / (2 * log_sigma.exp_())
+    return c + (x - mu) * (x - mu) / (2 * (2*log_sigma).exp_())
 
 
 def sequence_gaussian_nll(input, target, *args, **kwargs):
