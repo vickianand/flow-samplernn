@@ -28,11 +28,8 @@ class FolderDataset(Dataset):
     def __getitem__(self, index):
         (seq, _) = load(self.file_names[index], sr=None, mono=True)
         return torch.cat([
-            torch.LongTensor(self.overlap_len) \
-                 .fill_(utils.q_zero(self.q_levels)),
-            utils.linear_quantize(
-                torch.from_numpy(seq), self.q_levels
-            )
+            torch.zeros(self.overlap_len),
+            torch.from_numpy(seq)
         ])
 
     def __len__(self):

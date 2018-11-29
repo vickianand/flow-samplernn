@@ -127,13 +127,8 @@ class SampleLevelMLP(torch.nn.Module):
 
         self.q_levels = q_levels
 
-        self.embedding = torch.nn.Embedding(
-            self.q_levels,
-            self.q_levels
-        )
-
         self.input = torch.nn.Conv1d(
-            in_channels=q_levels,
+            in_channels=1,
             out_channels=dim,
             kernel_size=frame_size,
             bias=False
@@ -154,7 +149,7 @@ class SampleLevelMLP(torch.nn.Module):
 
         self.output = torch.nn.Conv1d(
             in_channels=dim,
-            out_channels=q_levels,
+            out_channels=2, # mu, log_sigma
             kernel_size=1
         )
         nn.lecun_uniform(self.output.weight)
@@ -165,21 +160,14 @@ class SampleLevelMLP(torch.nn.Module):
     def forward(self, prev_samples, upper_tier_conditioning):
         (batch_size, _, _) = upper_tier_conditioning.size()
 
-        prev_samples = self.embedding(
-            prev_samples.contiguous().view(-1)
-        ).view(
-            batch_size, -1, self.q_levels
-        )
-
-        prev_samples = prev_samples.permute(0, 2, 1)
+        prev_samples = prev_samples.unsqueeze(1)
         upper_tier_conditioning = upper_tier_conditioning.permute(0, 2, 1)
 
         x = F.relu(self.input(prev_samples) + upper_tier_conditioning)
         x = F.relu(self.hidden(x))
         x = self.output(x).permute(0, 2, 1).contiguous()
 
-        return F.log_softmax(x.view(-1, self.q_levels)) \
-                .view(batch_size, -1, self.q_levels)
+        return x    # mu = x[:b, :T, 0], log_sigma = x[:b, :T, 1]
 
 
 class Runner:
@@ -215,10 +203,7 @@ class Predictor(Runner, torch.nn.Module):
         for rnn in reversed(self.model.frame_level_rnns):
             from_index = self.model.lookback - rnn.n_frame_samples
             to_index = -rnn.n_frame_samples + 1
-            prev_samples = 2 * utils.linear_dequantize(
-                input_sequences[:, from_index : to_index],
-                self.model.q_levels
-            )
+            prev_samples = input_sequences[:, from_index : to_index]
             prev_samples = prev_samples.contiguous().view(
                 batch_size, -1, rnn.n_frame_samples
             )
@@ -260,10 +245,7 @@ class Generator(Runner):
                     continue
 
                 prev_samples = torch.autograd.Variable(
-                    2 * utils.linear_dequantize(
-                        sequences[:, i - rnn.n_frame_samples : i],
-                        self.model.q_levels
-                    ).unsqueeze(1),
+                    sequences[:, i - rnn.n_frame_samples : i].unsqueeze(1), # [**] not sure of unsqueeze
                     volatile=True
                 )
                 if self.cuda:

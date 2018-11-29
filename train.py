@@ -6,7 +6,7 @@ except ImportError:
 
 from model import SampleRNN, Predictor
 from optim import gradient_clipping
-from nn import sequence_nll_loss_bits
+from nn import sequence_gaussian_nll
 from trainer import Trainer
 from trainer.plugins import (
     TrainingLossMonitor, ValidationPlugin, AbsoluteTimeMonitor, SaverPlugin,
@@ -191,7 +191,7 @@ def main(exp, frame_sizes, dataset, **params):
     val_split = test_split - params['val_frac']
 
     trainer = Trainer(
-        predictor, sequence_nll_loss_bits, optimizer,
+        predictor, sequence_gaussian_nll, optimizer,
         data_loader(0, val_split, eval=False),
         cuda=params['cuda']
     )

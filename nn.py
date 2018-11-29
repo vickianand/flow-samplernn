@@ -68,3 +68,19 @@ def sequence_nll_loss_bits(input, target, *args, **kwargs):
     return nn.functional.nll_loss(
         input.view(-1, n_classes), target.view(-1), *args, **kwargs
     ) * math.log(math.e, 2)
+
+
+def gaussian_loss(x, mu, log_sigma):
+    ''' nll for gaussian distribution
+        log_sigma is actually assumed to be log(sigma^2)
+    '''
+    pi = x.new_full(size = x.shape, fill_value = math.pi)
+    c = log_sigma + 0.5 * torch.log(2 * pi)
+    return c + (x - mu) * (x - mu) / (2 * log_sigma.exp_())
+
+
+def sequence_gaussian_nll(input, target, *args, **kwargs):
+    ''' ipredicted_mu = input[:, :, 0], predicted_sigma = input[:, :, 1]
+    '''
+    return gaussian_loss(target, input[:, :, 0], input[:, :, 1]).sum()
+    
