@@ -283,7 +283,7 @@ class Generator(Runner):
             if self.cuda:
                 z = z.cuda()
             sequences[:, i] = sample_dist[:, 0, 0] \
-                        + sample_dist[:, 0, 1] * z
+                        + sample_dist[:, 0, 1].exp() * z
 
         torch.backends.cudnn.enabled = True
 
