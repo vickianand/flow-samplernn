@@ -167,8 +167,10 @@ class SampleLevelMLP(torch.nn.Module):
         x = F.relu(self.input(prev_samples) + upper_tier_conditioning)
         x = F.relu(self.hidden(x))
         x = self.output(x).permute(0, 2, 1).contiguous()
-
-        return x    # mu = x[:b, :T, 0], log_sigma = x[:b, :T, 1]
+        clamped_x = torch.cat( (x[:, :, 0].unsqueeze(dim=2), 
+                                x[:, :, 0].clamp(min=-10).unsqueeze(dim=2) )
+                                , dim=2)
+        return clamped_x    # mu = x[:, :, 0], log_sigma = clamped_x[:, :, 1]
 
 
 class Runner:
