@@ -1,7 +1,7 @@
 import matplotlib
 matplotlib.use('Agg')
 
-from model import Generator
+from model_flow2 import Generator
 
 import torch
 from torch.autograd import Variable
@@ -143,12 +143,13 @@ class GeneratorPlugin(Plugin):
 
     pattern = 'ep{}-s{}.wav'
 
-    def __init__(self, samples_path, n_samples, sample_length, sample_rate):
+    def __init__(self, samples_path, n_samples, sample_length, sample_rate, save_raw=False):
         super().__init__([(1, 'epoch')])
         self.samples_path = samples_path
         self.n_samples = n_samples
         self.sample_length = sample_length
         self.sample_rate = sample_rate
+        self.save_raw = save_raw
 
     def register(self, trainer):
         self.generate = Generator(trainer.model.model, trainer.cuda)
@@ -157,6 +158,9 @@ class GeneratorPlugin(Plugin):
         samples = self.generate(self.n_samples, self.sample_length) \
                       .cpu().float().numpy()
         for i in range(self.n_samples):
+            if self.save_raw:
+                samples.tofile('debug_seq_{}.csv'.format(epoch_index),
+                                sep=',', format='%10.5f')
             write_wav(
                 os.path.join(
                     self.samples_path, self.pattern.format(epoch_index, i + 1)

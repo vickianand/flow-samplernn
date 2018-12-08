@@ -4,7 +4,8 @@ try:
 except ImportError:
     pass
 
-from model import SampleRNN, Predictor
+from model_flow2 import SampleRNN, Predictor
+
 from optim import gradient_clipping
 from nn import sequence_gaussian_nll
 from trainer import Trainer

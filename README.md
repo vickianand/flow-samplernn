@@ -3,6 +3,16 @@
 We try to improve the generation speed of SampleRNN model by using IAFs (inverse autoregressive flows).
 This implementation is starting with a fork of [samplernn-pytorch](https://github.com/deepsound-project/samplernn-pytorch) implementation.
 
+
+# New files added
+* generate_from_model.py 
+    - Meant for independently generating sequence using a trained model.
+    - The code has the paths for the model and the model-parameters hard-coded in it.
+    - This has not been tested on CPU. 
+* test_generator.py
+    - This is just for checking the time taken by the generator.
+    - Again the model and its parameters are hard-coded as fo now.
+
 Further details below in this README have been copied from the original forked repository.
 ![A visual representation of the SampleRNN architecture](http://deepsound.io/images/samplernn.png)
 

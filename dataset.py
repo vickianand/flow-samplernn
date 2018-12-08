@@ -27,6 +27,7 @@ class FolderDataset(Dataset):
 
     def __getitem__(self, index):
         (seq, _) = load(self.file_names[index], sr=None, mono=True)
+        # print(self.file_names[index])
         return torch.cat([
             torch.zeros(self.overlap_len),
             torch.from_numpy(seq)
@@ -57,7 +58,8 @@ class DataLoader(DataLoaderBase):
                 input_sequences = sequences[:, : -1]
                 target_sequences = sequences[:, self.overlap_len :].contiguous()
 
-                yield (input_sequences, reset, target_sequences)
+                # yield (input_sequences, reset, target_sequences)
+                yield (sequences, reset, target_sequences)
 
                 reset = False
 

@@ -75,11 +75,11 @@ def gaussian_loss(x, mu, log_sigma):
     '''
     pi = x.new_full(size = x.shape, fill_value = math.pi)
     c = log_sigma + 0.5 * torch.log(2 * pi)
-    return c + (x - mu) * (x - mu) / (2 * (2*log_sigma).exp_())
+    return c + (x - mu) * (x - mu) / (2 * torch.exp(2*log_sigma))
 
 
 def sequence_gaussian_nll(input, target, *args, **kwargs):
     ''' ipredicted_mu = input[:, :, 0], predicted_sigma = input[:, :, 1]
     '''
-    return gaussian_loss(target, input[:, :, 0], input[:, :, 1]).sum()
+    return gaussian_loss(target, input[:, :, 0], input[:, :, 1]).mean()
     
