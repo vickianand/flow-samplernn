@@ -227,10 +227,10 @@ class Predictor(Runner, torch.nn.Module):
 
         # second last dimension to be kept same as in_channel of first layer of MLP
         # [**] may want to replace zeros() with randn() here
-        z = torch.zeros(batch_size, bottom_frame_size, seq_len // bottom_frame_size,
+        z = mlp_input_sequences.new_zeros(batch_size, bottom_frame_size, seq_len // bottom_frame_size,
                 requires_grad=False)
-        if(self.cuda):
-            z = z.cuda()
+        # if(self.cuda):
+        #     z = z.cuda()
         
         sample_dist = []
 
@@ -256,24 +256,10 @@ class Generator(Runner):
         super().__init__(model)
         self.cuda = cuda
 
-    def __call__(self, n_seqs, seq_len):
-        # generation doesn't work with CUDNN for some reason
-        torch.backends.cudnn.enabled = False
 
-        self.reset_hidden_states()
-
-        bottom_frame_size = self.model.frame_level_rnns[0].n_frame_samples
-        sequences = torch.zeros(n_seqs, self.model.lookback + seq_len)
-        frame_level_outputs = [None for _ in self.model.frame_level_rnns]
-
-
-        # device = torch.device('cpu')
-        # if self.cuda:
-        #     device = torch.device('cuda')
-
-        # ----------------------------------------------------------------------
-        # calculating sequence of z as required by IAF during sampling
-
+    def get_rand_z2(self, n_seqs, seq_len, bottom_frame_size):
+        ''' calculating sequence of z as required by IAF during sampling
+        '''
         rand_z = torch.randn(n_seqs, seq_len)
         idx = torch.arange(0, seq_len, bottom_frame_size)
 
@@ -288,7 +274,33 @@ class Generator(Runner):
             z_list.append(z_temp)
         
         z = torch.stack(z_list, dim=3).view(n_seqs, bottom_frame_size, seq_len)
-        # ----------------------------------------------------------------------
+        return rand_z, z
+
+
+    def get_rand_z(self, n_seqs, seq_len, bottom_frame_size):
+        ''' calculating sequence of z as required by IAF during sampling
+        '''
+        rand_z = torch.randn(n_seqs, seq_len)
+
+        # [**] may want to replace zeros() with randn() here
+        z = torch.zeros(n_seqs, bottom_frame_size, seq_len)
+        
+        for i in range(1, bottom_frame_size+1):
+            z[:, bottom_frame_size - i, i:] = rand_z[:, :-i]
+        return rand_z, z
+
+
+    def __call__(self, n_seqs, seq_len):
+        # generation doesn't work with CUDNN for some reason
+        torch.backends.cudnn.enabled = False
+
+        self.reset_hidden_states()
+
+        bottom_frame_size = self.model.frame_level_rnns[0].n_frame_samples
+        sequences = torch.zeros(n_seqs, self.model.lookback + seq_len)
+        frame_level_outputs = [None for _ in self.model.frame_level_rnns]
+
+        rand_z, z = self.get_rand_z(n_seqs, seq_len, bottom_frame_size)
 
         if(self.cuda):
             z = z.cuda()
