@@ -132,9 +132,13 @@ def tee_stdout(log_path):
 def make_data_loader(overlap_len, params):
     path = os.path.join(params['datasets_path'], params['dataset'])
     def data_loader(split_from, split_to, eval):
-        dataset = FolderDataset(
-            path, overlap_len, params['q_levels'], split_from, split_to
-        )
+        if (params['dataset'] == "toy_sin_wave"):
+            dataset = FolderDataset(toy_sin_wave = True)
+        else:
+            dataset = FolderDataset(
+                path=path, overlap_len=overlap_len, q_levels=params['q_levels'],
+                ratio_min=split_from, ratio_max=split_to
+            )
         return DataLoader(
             dataset,
             batch_size=params['batch_size'],

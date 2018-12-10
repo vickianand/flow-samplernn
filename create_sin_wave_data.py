@@ -4,12 +4,13 @@ from librosa.output import write_wav
 import time
 
 def get_batch(batch_size, timesteps):
+    repeat_factor = 128.
     low_freq_factor = np.random.uniform(size=(batch_size,))
     high_freq_factor = np.random.uniform(size=(batch_size,))
 
     x = np.arange(0, np.pi, np.pi/timesteps)
-    low_y = (low_freq_factor + 1)[:, None]*x[None, :]
-    high_y = 20.*(high_freq_factor + 1)[:, None]*x[None, :]
+    low_y = repeat_factor*(low_freq_factor + 1)[:, None]*x[None, :]
+    high_y = repeat_factor*20.*(high_freq_factor + 1)[:, None]*x[None, :]
 
     noise = np.random.uniform(low=-0.001, high=0.001, size=high_y.shape)
     batch = np.sin(high_y)*np.sin(low_y) + noise

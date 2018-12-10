@@ -7,34 +7,62 @@ from torch.utils.data import (
 
 from librosa.core import load
 from natsort import natsorted
+import numpy as np
 
 from os import listdir
 from os.path import join
 
 
+def sin_wave_data(batch_size, timesteps):
+    low_freq_factor = np.random.uniform(size=(batch_size,))
+    high_freq_factor = np.random.uniform(size=(batch_size,))
+
+    x = np.arange(0, np.pi, np.pi/timesteps)
+    low_y = (low_freq_factor + 1)[:, None]*x[None, :]
+    high_y = 20.*(high_freq_factor + 1)[:, None]*x[None, :]
+
+    noise = np.random.uniform(low=-0.001, high=0.001, size=high_y.shape)
+    batch = np.sin(high_y)*np.sin(low_y) + noise
+    return batch.astype('float32')
+
+
 class FolderDataset(Dataset):
 
-    def __init__(self, path, overlap_len, q_levels, ratio_min=0, ratio_max=1):
+    toy_data_count = 1024
+    toy_seq_len = 16000 * 8
+
+    def __init__(self, path=None, overlap_len=64, q_levels=0,
+                    ratio_min=0, ratio_max=1, toy_sin_wave = False):
         super().__init__()
         self.overlap_len = overlap_len
         self.q_levels = q_levels
-        file_names = natsorted(
-            [join(path, file_name) for file_name in listdir(path)]
-        )
-        self.file_names = file_names[
-            int(ratio_min * len(file_names)) : int(ratio_max * len(file_names))
-        ]
+        self.toy_sin_wave = toy_sin_wave
+        if(toy_sin_wave == False):
+            file_names = natsorted(
+                [join(path, file_name) for file_name in listdir(path)]
+            )
+            self.file_names = file_names[
+                int(ratio_min * len(file_names)) : int(ratio_max * len(file_names))
+            ]
 
     def __getitem__(self, index):
-        (seq, _) = load(self.file_names[index], sr=None, mono=True)
-        # print(self.file_names[index])
-        return torch.cat([
-            torch.zeros(self.overlap_len),
-            torch.from_numpy(seq)
-        ])
+        if(self.toy_sin_wave == False):
+            (seq, _) = load(self.file_names[index], sr=None, mono=True)
+            # print(self.file_names[index])
+            return torch.cat([
+                torch.zeros(self.overlap_len),
+                torch.from_numpy(seq)
+            ])
+        else:
+            return torch.from_numpy(
+                sin_wave_data(1, self.toy_seq_len + self.overlap_len).reshape(-1,)
+                )
 
     def __len__(self):
-        return len(self.file_names)
+        if(self.toy_sin_wave == True):
+            return self.toy_data_count
+        else:
+            return len(self.file_names)
 
 
 class DataLoader(DataLoaderBase):

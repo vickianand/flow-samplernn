@@ -11,6 +11,11 @@ For running the baseline model (`model.py` has the implementation), we need to m
 3. In `dataset.py` - replace `yield (sequences, reset, target_sequences)` by `yield (input_sequences, reset, target_sequences)`
 Run as usual after making above three changes.
 
+## Running on toy sine-waves
+For training on this toy dataset use, `--dataset toy_sin_wave` argument while running `train.py`.
+There is an implementation for generating the toy sine-waves in `sin_wave_data()` function in `dataset.py` file.
+In `FolderDataset` class in same file, use the `toy_data_count` variable for defining the count of sequences in a single epoch and `toy_seq_len` variable for defining the length fo each sequence.
+
 ## New files added
 * model_flow2.py
     - This file has the implementation of modified sampleRNN with IAF at sample-level.
