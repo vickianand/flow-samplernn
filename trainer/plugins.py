@@ -112,7 +112,10 @@ class SaverPlugin(Plugin):
         if not self.keep_old_checkpoints:
             self._clear(self.last_pattern.format('*', '*'))
         torch.save(
-            self.trainer.model.state_dict(),
+            {
+                'model': self.trainer.model.state_dict(),
+                'optimizer' : self.trainer.optimizer.state_dict()
+            }, 
             os.path.join(
                 self.checkpoints_path,
                 self.last_pattern.format(epoch_index, self.trainer.iterations)

@@ -36,9 +36,9 @@ if torch.cuda.is_available():
     predictor1 = predictor1.cuda()
 
 if torch.cuda.is_available():
-    predictor1.load_state_dict(torch.load(modelpath))
+    predictor1.load_state_dict(torch.load(modelpath)['model'])
 else:
-    predictor1.load_state_dict(torch.load(modelpath, map_location='cpu'))
+    predictor1.load_state_dict(torch.load(modelpath, map_location='cpu')['model'])
 
 print("model loaded successfully!")
 

@@ -204,10 +204,11 @@ def main(exp, frame_sizes, dataset, **params):
     checkpoints_path = os.path.join(results_path, 'checkpoints')
     checkpoint_data = load_last_checkpoint(checkpoints_path)
     if checkpoint_data is not None:
-        (state_dict, epoch, iteration) = checkpoint_data
+        (state_dicts, epoch, iteration) = checkpoint_data
         trainer.epochs = epoch
         trainer.iterations = iteration
-        predictor.load_state_dict(state_dict)
+        predictor.load_state_dict(state_dicts['model'])
+        optimizer.load_state_dict(state_dicts['optimizer'])
 
     trainer.register_plugin(TrainingLossMonitor(
         smoothing=params['loss_smoothing']
