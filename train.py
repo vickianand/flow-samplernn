@@ -4,9 +4,10 @@ try:
 except ImportError:
     pass
 
-from model import SampleRNN, Predictor
+from model_flow2 import SampleRNN, Predictor
+
 from optim import gradient_clipping
-from nn import sequence_nll_loss_bits
+from nn import sequence_gaussian_nll
 from trainer import Trainer
 from trainer.plugins import (
     TrainingLossMonitor, ValidationPlugin, AbsoluteTimeMonitor, SaverPlugin,
@@ -131,9 +132,13 @@ def tee_stdout(log_path):
 def make_data_loader(overlap_len, params):
     path = os.path.join(params['datasets_path'], params['dataset'])
     def data_loader(split_from, split_to, eval):
-        dataset = FolderDataset(
-            path, overlap_len, params['q_levels'], split_from, split_to
-        )
+        if (params['dataset'] == "toy_sin_wave"):
+            dataset = FolderDataset(toy_sin_wave = True)
+        else:
+            dataset = FolderDataset(
+                path=path, overlap_len=overlap_len, q_levels=params['q_levels'],
+                ratio_min=split_from, ratio_max=split_to
+            )
         return DataLoader(
             dataset,
             batch_size=params['batch_size'],
@@ -191,7 +196,7 @@ def main(exp, frame_sizes, dataset, **params):
     val_split = test_split - params['val_frac']
 
     trainer = Trainer(
-        predictor, sequence_nll_loss_bits, optimizer,
+        predictor, sequence_gaussian_nll, optimizer,
         data_loader(0, val_split, eval=False),
         cuda=params['cuda']
     )
@@ -199,10 +204,11 @@ def main(exp, frame_sizes, dataset, **params):
     checkpoints_path = os.path.join(results_path, 'checkpoints')
     checkpoint_data = load_last_checkpoint(checkpoints_path)
     if checkpoint_data is not None:
-        (state_dict, epoch, iteration) = checkpoint_data
+        (state_dicts, epoch, iteration) = checkpoint_data
         trainer.epochs = epoch
         trainer.iterations = iteration
-        predictor.load_state_dict(state_dict)
+        predictor.load_state_dict(state_dicts['model'])
+        optimizer.load_state_dict(state_dicts['optimizer'])
 
     trainer.register_plugin(TrainingLossMonitor(
         smoothing=params['loss_smoothing']

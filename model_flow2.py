@@ -58,7 +58,7 @@ class FrameLevelRNN(torch.nn.Module):
             out_channels=dim,
             kernel_size=1
         )
-        init.xavier_uniform(self.input_expand.weight, gain=0.01)
+        init.kaiming_uniform(self.input_expand.weight)
         init.constant(self.input_expand.bias, 0)
         if weight_norm:
             self.input_expand = torch.nn.utils.weight_norm(self.input_expand)
@@ -129,12 +129,12 @@ class SampleLevelMLP(torch.nn.Module):
         self.q_levels = q_levels
 
         self.input = torch.nn.Conv1d(
-            in_channels=1,
+            in_channels=frame_size,
             out_channels=dim,
-            kernel_size=frame_size,
+            kernel_size=1,
             bias=False
         )
-        init.xavier_uniform(self.input.weight, gain=0.01)
+        init.kaiming_uniform(self.input.weight)
         if weight_norm:
             self.input = torch.nn.utils.weight_norm(self.input)
 
@@ -143,7 +143,7 @@ class SampleLevelMLP(torch.nn.Module):
             out_channels=dim,
             kernel_size=1
         )
-        init.xavier_uniform(self.hidden.weight, gain=0.01)
+        init.kaiming_uniform(self.hidden.weight)
         init.constant(self.hidden.bias, 0)
         if weight_norm:
             self.hidden = torch.nn.utils.weight_norm(self.hidden)
@@ -159,12 +159,12 @@ class SampleLevelMLP(torch.nn.Module):
             self.output = torch.nn.utils.weight_norm(self.output)
 
     def forward(self, prev_samples, upper_tier_conditioning):
-        prev_samples = prev_samples.unsqueeze(1)
         upper_tier_conditioning = upper_tier_conditioning.permute(0, 2, 1)
 
         x = F.relu(self.input(prev_samples) + upper_tier_conditioning)
         x = F.relu(self.hidden(x))
         x = self.output(x).permute(0, 2, 1).contiguous()
+
         clamped_x = torch.cat( (x[:, :, 0].unsqueeze(dim=2), 
                                 x[:, :, 1].clamp(min=-8).unsqueeze(dim=2) )
                                 , dim=2)
@@ -198,12 +198,13 @@ class Predictor(Runner, torch.nn.Module):
         if reset:
             self.reset_hidden_states()
 
-        (batch_size, _) = input_sequences.size()
+        (batch_size, seq_len) = input_sequences.size()
+        seq_len = seq_len - self.model.lookback # seq_len = 1024
 
         upper_tier_conditioning = None
         for rnn in reversed(self.model.frame_level_rnns):
             from_index = self.model.lookback - rnn.n_frame_samples
-            to_index = -rnn.n_frame_samples + 1
+            to_index = -rnn.n_frame_samples # + 1
             prev_samples = input_sequences[:, from_index : to_index]
             prev_samples = prev_samples.contiguous().view(
                 batch_size, -1, rnn.n_frame_samples
@@ -214,12 +215,39 @@ class Predictor(Runner, torch.nn.Module):
             )
 
         bottom_frame_size = self.model.frame_level_rnns[0].frame_size
-        mlp_input_sequences = input_sequences \
-            [:, self.model.lookback - bottom_frame_size :]
 
-        return self.model.sample_level_mlp(
-            mlp_input_sequences, upper_tier_conditioning
+        # break seq_len -> (seq_len/bottom_frame_size, bottom_frame_size)
+        # note that (bottom_frame_size, seq_len/bottom_frame_size) will not work
+        mlp_input_sequences = input_sequences[:, self.model.lookback:].view(
+            batch_size, (seq_len // bottom_frame_size), bottom_frame_size
         )
+        upper_tier_conditioning = upper_tier_conditioning.view(
+            batch_size, (seq_len // bottom_frame_size), bottom_frame_size, self.model.dim
+        )
+
+        # second last dimension to be kept same as in_channel of first layer of MLP
+        # [**] may want to replace zeros() with randn() here
+        z = mlp_input_sequences.new_zeros(batch_size, bottom_frame_size, seq_len // bottom_frame_size,
+                requires_grad=False)
+        # if(self.cuda):
+        #     z = z.cuda()
+        
+        sample_dist = []
+
+        for j in range(bottom_frame_size):
+
+            flow_out = self.model.sample_level_mlp(
+                z, upper_tier_conditioning[:, :, j, :])
+            
+            sample_dist.append(flow_out)
+
+            new_z = (mlp_input_sequences[:, :, j] - flow_out[:, :, 0]) \
+                            / torch.exp(flow_out[:, :, 1])
+            z = torch.cat([z[:, 1:, :], new_z.unsqueeze(1)], dim=1)
+            z = z.clamp(min=-5, max=5)
+        # stack along dim=2 , so that outputs are not concatened rather inter-leaved
+        # dimesion changes: (batch, seq_len/fs, 2) -> (batch, seq_len/fs, fs, 2) -> (btch, seq_len, 2)
+        return torch.stack(sample_dist, dim=2).view(batch_size, seq_len, 2)
 
 
 class Generator(Runner):
@@ -227,6 +255,40 @@ class Generator(Runner):
     def __init__(self, model, cuda=False):
         super().__init__(model)
         self.cuda = cuda
+
+
+    def get_rand_z2(self, n_seqs, seq_len, bottom_frame_size):
+        ''' calculating sequence of z as required by IAF during sampling
+        '''
+        rand_z = torch.randn(n_seqs, seq_len)
+        idx = torch.arange(0, seq_len, bottom_frame_size)
+
+        # [**] may want to replace zeros() with randn() here
+        z_temp = torch.zeros(n_seqs, bottom_frame_size, seq_len//bottom_frame_size)
+
+        z_list = [z_temp]
+
+        for j in range(0, bottom_frame_size-1):
+            new_z = rand_z[:, idx+j]
+            z_temp = torch.cat([ z_temp[:, 1:, :], new_z.unsqueeze(1) ], dim=1)
+            z_list.append(z_temp)
+        
+        z = torch.stack(z_list, dim=3).view(n_seqs, bottom_frame_size, seq_len)
+        return rand_z, z
+
+
+    def get_rand_z(self, n_seqs, seq_len, bottom_frame_size):
+        ''' calculating sequence of z as required by IAF during sampling
+        '''
+        rand_z = torch.randn(n_seqs, seq_len)
+
+        # [**] may want to replace zeros() with randn() here
+        z = torch.zeros(n_seqs, bottom_frame_size, seq_len)
+        
+        for i in range(1, bottom_frame_size+1):
+            z[:, bottom_frame_size - i, i:] = rand_z[:, :-i]
+        return rand_z, z
+
 
     def __call__(self, n_seqs, seq_len):
         # generation doesn't work with CUDNN for some reason
@@ -238,6 +300,12 @@ class Generator(Runner):
         sequences = torch.zeros(n_seqs, self.model.lookback + seq_len)
         frame_level_outputs = [None for _ in self.model.frame_level_rnns]
 
+        rand_z, z = self.get_rand_z(n_seqs, seq_len, bottom_frame_size)
+
+        if(self.cuda):
+            z = z.cuda()
+            rand_z = rand_z.cuda()
+        
         for i in range(self.model.lookback, self.model.lookback + seq_len):
             for (tier_index, rnn) in \
                     reversed(list(enumerate(self.model.frame_level_rnns))):
@@ -264,24 +332,20 @@ class Generator(Runner):
                     rnn, prev_samples, upper_tier_conditioning
                 )
 
-            prev_samples = torch.autograd.Variable(
-                sequences[:, i - bottom_frame_size : i],
-                volatile=True
-            )
-            if self.cuda:
-                prev_samples = prev_samples.cuda()
+            if  (i % bottom_frame_size != 0):
+                continue
+
             upper_tier_conditioning = \
-                frame_level_outputs[0][:, i % bottom_frame_size, :] \
-                                      .unsqueeze(1)
+                frame_level_outputs[0]  # assuming that the frame-size will be same
+                                        # as that of MLP level
+            
+            j = i - self.model.lookback # for indexing z, will use j insted of i
+
             sample_dist = self.model.sample_level_mlp(
-                prev_samples, upper_tier_conditioning
+                z[:, :, j:j+bottom_frame_size], upper_tier_conditioning
             ).data
-            # sample = mu + z * sigma; where z is sampled from std-normal
-            z = torch.randn(n_seqs, 1).view(-1)
-            if self.cuda:
-                z = z.cuda()
-            sequences[:, i] = sample_dist[:, 0, 0] \
-                        + 0.001 * sample_dist[:, 0, 1].exp() * z
+            sequences[:, i : i+bottom_frame_size] = sample_dist[:, :, 0] \
+                        + sample_dist[:, :, 1].exp() * rand_z[:, j:j+bottom_frame_size]
 
         torch.backends.cudnn.enabled = True
 
